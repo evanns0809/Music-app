@@ -408,8 +408,19 @@ function renderNoteTimeline(){
       blk.innerHTML=`<span class="nidx">${i+1}</span><span class="nlbl">?</span><span class="noct">tap</span>`;
     }
     blk.addEventListener('click',()=>{
-      state.selTap=i;renderNoteTimeline();
-      highlightKey(a?a.midi:null);
+      if(state.selTap===i){
+        if(a){
+          // Already selected & assigned: remove the note so you can reassign
+          state.noteAssigns=state.noteAssigns.filter(n=>n.tapIndex!==i);
+        }else{
+          // Already selected & empty: deselect so you can play freely
+          state.selTap=-1;
+        }
+      }else{
+        state.selTap=i;
+      }
+      renderNoteTimeline();
+      highlightKey(state.selTap===i&&a?a.midi:null);
     });
     el.noteTLInner.appendChild(blk);
   });
