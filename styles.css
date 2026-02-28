@@ -155,6 +155,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
 .pkey .klbl{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);font-size:.6rem;font-weight:600;pointer-events:none}
 .pkey.w .klbl{color:#a1a1aa}
 .pkey.b .klbl{color:#52525b}
+.piano-hint{text-align:center;font-size:.65rem;color:var(--text-3);margin-top:6px;opacity:.6}
 
 /* ---- Arrange ---- */
 .arrange-layout{gap:14px}
