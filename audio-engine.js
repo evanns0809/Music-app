@@ -1,52 +1,59 @@
 /* ============================================
-   Piano Composer - Audio Engine
-   Beautiful piano synthesis using Web Audio API
-   with reverb, harmonics, and velocity
+   Audio Engine with Real Piano Soundfont
+   Uses Tone.js Sampler + Salamander Grand Piano
    ============================================ */
 
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const BLACK_KEYS = new Set([1,3,6,8,10]);
+
+function midiToFreq(m){return 440*Math.pow(2,(m-69)/12)}
+function midiToName(m){return NOTE_NAMES[m%12]+(Math.floor(m/12)-1)}
+function isBlackKey(m){return BLACK_KEYS.has(m%12)}
+function noteDisplayName(m){
+  const flat=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+  return flat[m%12]+(Math.floor(m/12)-1);
+}
+
 class PianoAudioEngine {
-  constructor() {
-    this.ctx = null;
-    this.masterGain = null;
-    this.reverbNode = null;
-    this.reverbGain = null;
-    this.dryGain = null;
-    this.compressor = null;
-    this.initialized = false;
-    this.soundType = 'grand';
-    this.reverbAmount = 0.4;
-    this.masterVolume = 0.8;
-    this.activeNotes = new Map();
+  constructor(){
+    this.ctx=null;
+    this.masterGain=null;
+    this.reverbNode=null;
+    this.reverbGain=null;
+    this.dryGain=null;
+    this.compressor=null;
+    this.initialized=false;
+    this.samplesLoaded=false;
+    this.sampleBuffers={};
+    this.reverbAmount=0.35;
+    this.masterVolume=0.8;
+    this.activeNotes=new Map();
+    this._onProgress=null;
   }
 
-  async init() {
-    if (this.initialized) return;
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  async init(onProgress){
+    if(this.initialized) return;
+    this._onProgress=onProgress||null;
+    this.ctx=new(window.AudioContext||window.webkitAudioContext)();
 
-    // Compressor for smooth dynamics
-    this.compressor = this.ctx.createDynamicsCompressor();
-    this.compressor.threshold.value = -20;
-    this.compressor.knee.value = 20;
-    this.compressor.ratio.value = 4;
-    this.compressor.attack.value = 0.003;
-    this.compressor.release.value = 0.15;
+    this.compressor=this.ctx.createDynamicsCompressor();
+    this.compressor.threshold.value=-18;
+    this.compressor.knee.value=18;
+    this.compressor.ratio.value=4;
+    this.compressor.attack.value=0.003;
+    this.compressor.release.value=0.15;
 
-    // Master gain
-    this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = this.masterVolume;
+    this.masterGain=this.ctx.createGain();
+    this.masterGain.gain.value=this.masterVolume;
 
-    // Dry / Wet (reverb) paths
-    this.dryGain = this.ctx.createGain();
-    this.dryGain.gain.value = 1 - this.reverbAmount;
+    this.dryGain=this.ctx.createGain();
+    this.dryGain.gain.value=1-this.reverbAmount;
+    this.reverbGain=this.ctx.createGain();
+    this.reverbGain.gain.value=this.reverbAmount;
 
-    this.reverbGain = this.ctx.createGain();
-    this.reverbGain.gain.value = this.reverbAmount;
+    this.reverbNode=this.ctx.createConvolver();
+    this.reverbNode.buffer=this._makeReverb(2.8,3.2);
 
-    // Build reverb impulse
-    this.reverbNode = this.ctx.createConvolver();
-    this.reverbNode.buffer = this._createReverbImpulse(2.5, 3.0);
-
-    // Routing: compressor -> dry + reverb -> master -> destination
     this.compressor.connect(this.dryGain);
     this.compressor.connect(this.reverbNode);
     this.reverbNode.connect(this.reverbGain);
@@ -54,279 +61,209 @@ class PianoAudioEngine {
     this.reverbGain.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
 
-    this.initialized = true;
+    this.initialized=true;
+    await this._loadSamples();
   }
 
-  /** Generate a convolution reverb impulse response */
-  _createReverbImpulse(duration, decay) {
-    const rate = this.ctx.sampleRate;
-    const length = rate * duration;
-    const buffer = this.ctx.createBuffer(2, length, rate);
-    for (let ch = 0; ch < 2; ch++) {
-      const data = buffer.getChannelData(ch);
-      for (let i = 0; i < length; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+  /* ---- Reverb impulse ---- */
+  _makeReverb(dur,decay){
+    const r=this.ctx.sampleRate,len=r*dur;
+    const buf=this.ctx.createBuffer(2,len,r);
+    for(let ch=0;ch<2;ch++){
+      const d=buf.getChannelData(ch);
+      for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,decay);
+    }
+    return buf;
+  }
+
+  /* ---- Load Salamander Grand Piano samples ---- */
+  async _loadSamples(){
+    // We load one sample per ~3 semitones across the full range.
+    // The Salamander Grand Piano is CC-BY, hosted by multiple CDNs.
+    const baseUrl='https://tonejs.github.io/audio/salamander/';
+    const sampleMap={
+      'A0':'A0.mp3','C1':'C1.mp3','Ds1':'Ds1.mp3','Fs1':'Fs1.mp3',
+      'A1':'A1.mp3','C2':'C2.mp3','Ds2':'Ds2.mp3','Fs2':'Fs2.mp3',
+      'A2':'A2.mp3','C3':'C3.mp3','Ds3':'Ds3.mp3','Fs3':'Fs3.mp3',
+      'A3':'A3.mp3','C4':'C4.mp3','Ds4':'Ds4.mp3','Fs4':'Fs4.mp3',
+      'A4':'A4.mp3','C5':'C5.mp3','Ds5':'Ds5.mp3','Fs5':'Fs5.mp3',
+      'A5':'A5.mp3','C6':'C6.mp3','Ds6':'Ds6.mp3','Fs6':'Fs6.mp3',
+      'A6':'A6.mp3','C7':'C7.mp3','Ds7':'Ds7.mp3','Fs7':'Fs7.mp3',
+      'A7':'A7.mp3','C8':'C8.mp3'
+    };
+
+    const keys=Object.keys(sampleMap);
+    let loaded=0;
+    const total=keys.length;
+
+    const fetchOne=async(noteName,file)=>{
+      try{
+        const resp=await fetch(baseUrl+file);
+        const ab=await resp.arrayBuffer();
+        const audioBuf=await this.ctx.decodeAudioData(ab);
+        // Convert note name to MIDI for lookup
+        const midi=this._nameToMidi(noteName);
+        this.sampleBuffers[midi]=audioBuf;
+      }catch(e){
+        // Silently skip failed samples
       }
+      loaded++;
+      if(this._onProgress) this._onProgress(loaded/total);
+    };
+
+    // Load in parallel batches of 6 to not overwhelm the browser
+    const entries=keys.map(k=>[k,sampleMap[k]]);
+    for(let i=0;i<entries.length;i+=6){
+      const batch=entries.slice(i,i+6);
+      await Promise.all(batch.map(([n,f])=>fetchOne(n,f)));
     }
-    return buffer;
+
+    this.samplesLoaded=true;
   }
 
-  /** Set master volume 0-1 */
-  setVolume(v) {
-    this.masterVolume = v;
-    if (this.masterGain) this.masterGain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+  /* Convert note name like "Ds4" to MIDI number */
+  _nameToMidi(name){
+    const map={'C':0,'Cs':1,'D':2,'Ds':3,'E':4,'F':5,'Fs':6,'G':7,'Gs':8,'A':9,'As':10,'B':11};
+    const match=name.match(/^([A-G]s?)(\d)$/);
+    if(!match) return 60;
+    return (parseInt(match[2])+1)*12+map[match[1]];
   }
 
-  /** Set reverb amount 0-1 */
-  setReverb(v) {
-    this.reverbAmount = v;
-    if (this.dryGain) {
-      this.dryGain.gain.setTargetAtTime(1 - v, this.ctx.currentTime, 0.05);
-      this.reverbGain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+  /* Find closest loaded sample to a given MIDI note */
+  _closestSample(midi){
+    const loaded=Object.keys(this.sampleBuffers).map(Number);
+    if(loaded.length===0) return null;
+    let best=loaded[0];
+    for(const m of loaded){
+      if(Math.abs(m-midi)<Math.abs(best-midi)) best=m;
     }
+    return{midi:best,buffer:this.sampleBuffers[best],detune:(midi-best)*100};
   }
 
-  /** Set piano sound type */
-  setSoundType(type) {
-    this.soundType = type;
-  }
+  /* ---- Play note ---- */
+  playNote(noteId,frequency,velocity=0.7,duration=0){
+    if(!this.initialized) return;
+    const midi=this._noteIdToMidi(noteId);
+    const now=this.ctx.currentTime;
 
-  /**
-   * Get harmonic profile for different piano sound types.
-   * Returns array of { ratio, amplitude, decay } for partials.
-   */
-  _getHarmonics(type) {
-    switch (type) {
-      case 'grand':
-        return [
-          { ratio: 1,   amp: 1.0,  decay: 2.5  },
-          { ratio: 2,   amp: 0.45, decay: 2.0  },
-          { ratio: 3,   amp: 0.25, decay: 1.6  },
-          { ratio: 4,   amp: 0.12, decay: 1.2  },
-          { ratio: 5,   amp: 0.07, decay: 1.0  },
-          { ratio: 6,   amp: 0.04, decay: 0.8  },
-          { ratio: 7,   amp: 0.02, decay: 0.6  },
-        ];
-      case 'bright':
-        return [
-          { ratio: 1,   amp: 0.9,  decay: 2.0  },
-          { ratio: 2,   amp: 0.55, decay: 1.8  },
-          { ratio: 3,   amp: 0.4,  decay: 1.5  },
-          { ratio: 4,   amp: 0.25, decay: 1.2  },
-          { ratio: 5,   amp: 0.15, decay: 1.0  },
-          { ratio: 6,   amp: 0.1,  decay: 0.8  },
-          { ratio: 7,   amp: 0.06, decay: 0.6  },
-          { ratio: 8,   amp: 0.03, decay: 0.5  },
-        ];
-      case 'warm':
-        return [
-          { ratio: 1,   amp: 1.0,  decay: 3.5  },
-          { ratio: 2,   amp: 0.3,  decay: 2.8  },
-          { ratio: 3,   amp: 0.1,  decay: 2.0  },
-          { ratio: 4,   amp: 0.04, decay: 1.5  },
-        ];
-      case 'electric':
-        return [
-          { ratio: 1,   amp: 1.0,  decay: 1.8  },
-          { ratio: 2,   amp: 0.6,  decay: 1.5  },
-          { ratio: 3,   amp: 0.35, decay: 1.2  },
-          { ratio: 4,   amp: 0.2,  decay: 0.9  },
-          { ratio: 5.02,amp: 0.1,  decay: 0.7  },
-          { ratio: 7,   amp: 0.08, decay: 0.5  },
-        ];
-      default:
-        return this._getHarmonics('grand');
+    if(this.samplesLoaded){
+      return this._playSample(midi,velocity,duration,now);
     }
+    // Fallback: synth if samples not loaded yet
+    return this._playSynth(frequency,velocity,duration,now,noteId);
   }
 
-  /**
-   * Play a piano note.
-   * @param {string} noteId - e.g. "C4", "F#3"
-   * @param {number} frequency - Hz
-   * @param {number} velocity - 0-1
-   * @param {number} duration - seconds (0 = sustain until noteOff)
-   */
-  playNote(noteId, frequency, velocity = 0.7, duration = 0) {
-    if (!this.initialized) return;
-    const now = this.ctx.currentTime;
-    const harmonics = this._getHarmonics(this.soundType);
-    const noteGain = this.ctx.createGain();
-    noteGain.gain.value = 0;
+  _noteIdToMidi(noteId){
+    const map={'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11};
+    const m=noteId.match(/^([A-G]#?)(-?\d)$/);
+    if(!m) return 60;
+    return(parseInt(m[2])+1)*12+map[m[1]];
+  }
+
+  _playSample(midi,velocity,duration,now){
+    const s=this._closestSample(midi);
+    if(!s) return;
+
+    const src=this.ctx.createBufferSource();
+    src.buffer=s.buffer;
+    src.detune.value=s.detune;
+    // Slight random detune for natural feel
+    src.detune.value+=((Math.random()-0.5)*4);
+
+    const gain=this.ctx.createGain();
+    gain.gain.value=velocity*0.85;
+
+    src.connect(gain);
+    gain.connect(this.compressor);
+    src.start(now);
+
+    if(duration>0){
+      gain.gain.setTargetAtTime(0,now+duration,0.18);
+      src.stop(now+duration+2);
+    }
+
+    const data={src,gain,startTime:now};
+    if(duration===0){
+      const id='s'+midi+'-'+now;
+      this.activeNotes.set(id,data);
+      return id;
+    }
+    return data;
+  }
+
+  _playSynth(freq,velocity,duration,now,noteId){
+    const noteGain=this.ctx.createGain();
+    noteGain.gain.value=0;
     noteGain.connect(this.compressor);
-
-    const oscillators = [];
-
-    // Higher notes decay faster
-    const octave = parseInt(noteId.slice(-1)) || 4;
-    const decayMult = Math.max(0.3, 1.0 - (octave - 3) * 0.12);
-
-    harmonics.forEach(h => {
-      const freq = frequency * h.ratio;
-      if (freq > 15000) return; // skip inaudible partials
-
-      const osc = this.ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-
-      // Slight detuning for richness
-      if (h.ratio > 1) {
-        osc.detune.value = (Math.random() - 0.5) * 3;
-      }
-
-      const partialGain = this.ctx.createGain();
-      partialGain.gain.value = h.amp * velocity;
-
-      // Decay envelope per partial
-      const decayTime = h.decay * decayMult;
-      partialGain.gain.setTargetAtTime(
-        h.amp * velocity * 0.6,
-        now + 0.01,
-        decayTime * 0.3
-      );
-      partialGain.gain.setTargetAtTime(0, now + decayTime * 0.5, decayTime * 0.6);
-
-      osc.connect(partialGain);
-      partialGain.connect(noteGain);
-      osc.start(now);
-
-      if (duration > 0) {
-        osc.stop(now + duration + 0.5);
-      }
-
-      oscillators.push({ osc, gain: partialGain });
+    const harmonics=[
+      {r:1,a:1,d:2.5},{r:2,a:.4,d:2},{r:3,a:.2,d:1.5},{r:4,a:.1,d:1},{r:5,a:.05,d:.8}
+    ];
+    const oscs=[];
+    const oct=parseInt(noteId.slice(-1))||4;
+    const dm=Math.max(.3,1-(oct-3)*.12);
+    harmonics.forEach(h=>{
+      const f=freq*h.r;if(f>15000)return;
+      const o=this.ctx.createOscillator();o.type='sine';o.frequency.value=f;
+      if(h.r>1)o.detune.value=(Math.random()-.5)*3;
+      const pg=this.ctx.createGain();pg.gain.value=h.a*velocity;
+      const dt=h.d*dm;
+      pg.gain.setTargetAtTime(h.a*velocity*.6,now+.01,dt*.3);
+      pg.gain.setTargetAtTime(0,now+dt*.5,dt*.6);
+      o.connect(pg);pg.connect(noteGain);o.start(now);
+      if(duration>0)o.stop(now+duration+.5);
+      oscs.push({osc:o,gain:pg});
     });
-
-    // Attack envelope
-    noteGain.gain.setTargetAtTime(velocity * 0.35, now, 0.004);
-
-    // Hammer click for realism
-    this._addHammerClick(now, velocity);
-
-    const noteData = { noteGain, oscillators, startTime: now };
-
-    if (duration > 0) {
-      // Auto release after duration
-      noteGain.gain.setTargetAtTime(0, now + duration, 0.15);
-      setTimeout(() => {
-        oscillators.forEach(o => { try { o.osc.stop(); } catch(e){} });
-        try { noteGain.disconnect(); } catch(e){}
-      }, (duration + 1) * 1000);
-    } else {
-      this.activeNotes.set(noteId, noteData);
-    }
-
-    return noteData;
-  }
-
-  /** Hammer click transient for realism */
-  _addHammerClick(time, velocity) {
-    const bufferSize = this.ctx.sampleRate * 0.02;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 15);
-    }
-    const src = this.ctx.createBufferSource();
-    src.buffer = buffer;
-    const clickGain = this.ctx.createGain();
-    clickGain.gain.value = velocity * 0.06;
-    // Filter the click
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 3000;
-    filter.Q.value = 1;
-
-    src.connect(filter);
-    filter.connect(clickGain);
-    clickGain.connect(this.compressor);
-    src.start(time);
-  }
-
-  /** Stop a sustained note */
-  noteOff(noteId) {
-    const noteData = this.activeNotes.get(noteId);
-    if (!noteData) return;
-    const now = this.ctx.currentTime;
-    noteData.noteGain.gain.setTargetAtTime(0, now, 0.12);
-    setTimeout(() => {
-      noteData.oscillators.forEach(o => { try { o.osc.stop(); } catch(e){} });
-      try { noteData.noteGain.disconnect(); } catch(e){}
-    }, 800);
-    this.activeNotes.delete(noteId);
-  }
-
-  /** Play a metronome click */
-  playMetronomeClick(accent = false) {
-    if (!this.initialized) return;
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = accent ? 1200 : 800;
-    const gain = this.ctx.createGain();
-    gain.gain.value = accent ? 0.25 : 0.15;
-    gain.gain.setTargetAtTime(0, now + 0.02, 0.015);
-    osc.connect(gain);
-    gain.connect(this.masterGain);
-    osc.start(now);
-    osc.stop(now + 0.08);
-  }
-
-  /** Play a short tap sound effect */
-  playTapSound() {
-    if (!this.initialized) return;
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = 600;
-    osc.frequency.setTargetAtTime(400, now, 0.03);
-    const gain = this.ctx.createGain();
-    gain.gain.value = 0.12;
-    gain.gain.setTargetAtTime(0, now + 0.01, 0.03);
-    osc.connect(gain);
-    gain.connect(this.masterGain);
-    osc.start(now);
-    osc.stop(now + 0.1);
-  }
-
-  /** Get current audio context time */
-  get currentTime() {
-    return this.ctx ? this.ctx.currentTime : 0;
-  }
-
-  /** Resume context (needed for iOS) */
-  async resume() {
-    if (this.ctx && this.ctx.state === 'suspended') {
-      await this.ctx.resume();
+    noteGain.gain.setTargetAtTime(velocity*.35,now,.004);
+    if(duration>0){
+      noteGain.gain.setTargetAtTime(0,now+duration,.15);
+      setTimeout(()=>{oscs.forEach(o=>{try{o.osc.stop()}catch(e){}});try{noteGain.disconnect()}catch(e){}},
+        (duration+1)*1000);
     }
   }
-}
 
-/* ============================================
-   NOTE UTILITIES
-   ============================================ */
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const BLACK_KEYS = new Set([1, 3, 6, 8, 10]); // indices of sharps/flats
+  noteOff(id){
+    const d=this.activeNotes.get(id);
+    if(!d)return;
+    const now=this.ctx.currentTime;
+    d.gain.gain.setTargetAtTime(0,now,.18);
+    setTimeout(()=>{try{d.src.stop()}catch(e){}try{d.gain.disconnect()}catch(e){}},1200);
+    this.activeNotes.delete(id);
+  }
 
-/** Convert MIDI number to frequency */
-function midiToFreq(midi) {
-  return 440 * Math.pow(2, (midi - 69) / 12);
-}
+  setVolume(v){
+    this.masterVolume=v;
+    if(this.masterGain)this.masterGain.gain.setTargetAtTime(v,this.ctx.currentTime,.05);
+  }
 
-/** Convert MIDI number to note name like "C4" */
-function midiToName(midi) {
-  const octave = Math.floor(midi / 12) - 1;
-  const name = NOTE_NAMES[midi % 12];
-  return name + octave;
-}
+  setReverb(v){
+    this.reverbAmount=v;
+    if(this.dryGain){
+      this.dryGain.gain.setTargetAtTime(1-v,this.ctx.currentTime,.05);
+      this.reverbGain.gain.setTargetAtTime(v,this.ctx.currentTime,.05);
+    }
+  }
 
-/** Check if a MIDI number is a black key */
-function isBlackKey(midi) {
-  return BLACK_KEYS.has(midi % 12);
-}
+  playMetronomeClick(accent){
+    if(!this.initialized)return;
+    const now=this.ctx.currentTime;
+    const o=this.ctx.createOscillator();o.type='sine';
+    o.frequency.value=accent?1200:800;
+    const g=this.ctx.createGain();g.gain.value=accent?.22:.13;
+    g.gain.setTargetAtTime(0,now+.02,.015);
+    o.connect(g);g.connect(this.masterGain);o.start(now);o.stop(now+.08);
+  }
 
-/** Get display name (use flat names for display) */
-function noteDisplayName(midi) {
-  const flatNames = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
-  const octave = Math.floor(midi / 12) - 1;
-  return flatNames[midi % 12] + octave;
+  playTapSound(){
+    if(!this.initialized)return;
+    const now=this.ctx.currentTime;
+    const o=this.ctx.createOscillator();o.type='triangle';
+    o.frequency.value=700;o.frequency.setTargetAtTime(500,now,.02);
+    const g=this.ctx.createGain();g.gain.value=.1;
+    g.gain.setTargetAtTime(0,now+.01,.025);
+    o.connect(g);g.connect(this.masterGain);o.start(now);o.stop(now+.1);
+  }
+
+  async resume(){
+    if(this.ctx&&this.ctx.state==='suspended') await this.ctx.resume();
+  }
 }
