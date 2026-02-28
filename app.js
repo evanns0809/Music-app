@@ -31,6 +31,14 @@ const state={
   looping:false,
   playing:false,
   playTimers:null,
+
+  // Rhythm preview playback
+  rhythmPlaying:false,
+  rhythmPaused:false,
+  rhythmPauseTime:0,
+  rhythmPlayStart:0,
+  rhythmTimers:[],
+  rhythmRAF:null,
 };
 
 const audio=new PianoAudioEngine();
@@ -61,6 +69,7 @@ const el={
   quantize:$('#quantize-value'),
   btnClear:$('#btn-clear-rhythm'),
   btnPlayR:$('#btn-play-rhythm'),
+  btnRestartR:$('#btn-restart-rhythm'),
   btnConfirm:$('#btn-confirm-rhythm'),
   noteTLInner:$('#note-tl-inner'),
   piano:$('#piano-keyboard'),
@@ -146,6 +155,7 @@ function getTimelineDuration(){
 function handleTap(e){
   e.preventDefault();
   ensureAudio();
+  if(state.rhythmPlaying||state.rhythmPaused) stopRhythmPlayback();
 
   const now=performance.now();
   if(state.taps.length===0){
@@ -232,16 +242,86 @@ function renderTapMarkers(){
 }
 
 function clearRhythm(){
+  stopRhythmPlayback();
   state.taps=[];state.tapStartTime=null;state.noteAssigns=[];state.selTap=-1;
   el.tapPrompt.classList.remove('dim');
   el.tapCounter.textContent='0 taps';
   renderTapMarkers();renderBeatLines();
 }
 
-function previewRhythm(){
+function toggleRhythmPreview(){
   if(!state.taps.length)return;
   ensureAudio();
-  state.taps.forEach(t=>setTimeout(()=>audio.playTapSound(),t.time*1000));
+  if(state.rhythmPlaying&&!state.rhythmPaused) pauseRhythm();
+  else if(state.rhythmPaused) resumeRhythm();
+  else startRhythmPlayback(0);
+}
+
+function startRhythmPlayback(fromTime){
+  stopRhythmPlayback(true);
+  state.rhythmPlaying=true;
+  state.rhythmPaused=false;
+  state.rhythmPlayStart=performance.now()-fromTime*1000;
+  state.taps.forEach(t=>{
+    const delay=(t.time-fromTime)*1000;
+    if(delay>=0) state.rhythmTimers.push(setTimeout(()=>audio.playTapSound(),delay));
+  });
+  el.tlCursor.style.display='block';
+  updateRhythmCursor();
+  const lastTime=state.taps[state.taps.length-1].time;
+  const remaining=(lastTime+0.5-fromTime)*1000;
+  if(remaining>0) state.rhythmTimers.push(setTimeout(()=>stopRhythmPlayback(),remaining));
+  updatePlayBtn();
+}
+
+function pauseRhythm(){
+  state.rhythmPauseTime=(performance.now()-state.rhythmPlayStart)/1000;
+  state.rhythmPaused=true;
+  state.rhythmTimers.forEach(t=>clearTimeout(t));
+  state.rhythmTimers=[];
+  if(state.rhythmRAF){cancelAnimationFrame(state.rhythmRAF);state.rhythmRAF=null}
+  updatePlayBtn();
+}
+
+function resumeRhythm(){startRhythmPlayback(state.rhythmPauseTime)}
+
+function restartRhythm(){stopRhythmPlayback(true);startRhythmPlayback(0)}
+
+function stopRhythmPlayback(silent){
+  state.rhythmTimers.forEach(t=>clearTimeout(t));
+  state.rhythmTimers=[];
+  if(state.rhythmRAF){cancelAnimationFrame(state.rhythmRAF);state.rhythmRAF=null}
+  state.rhythmPlaying=false;
+  state.rhythmPaused=false;
+  state.rhythmPauseTime=0;
+  el.tlCursor.style.display='none';
+  if(!silent) updatePlayBtn();
+}
+
+function updateRhythmCursor(){
+  if(!state.rhythmPlaying||state.rhythmPaused)return;
+  const elapsed=(performance.now()-state.rhythmPlayStart)/1000;
+  const dur=getTimelineDuration();
+  const pct=(elapsed/dur)*100;
+  el.tlCursor.style.left=Math.min(pct,100)+'%';
+  if(pct>85) el.rtWrap.scrollLeft=el.rtWrap.scrollWidth*(pct/100);
+  state.rhythmRAF=requestAnimationFrame(updateRhythmCursor);
+}
+
+function updatePlayBtn(){
+  const playing=state.rhythmPlaying&&!state.rhythmPaused;
+  const paused=state.rhythmPaused;
+  if(playing){
+    el.btnPlayR.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause';
+    el.btnReplayR.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause';
+  }else if(paused){
+    el.btnPlayR.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> Resume';
+    el.btnReplayR.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> Resume';
+  }else{
+    el.btnPlayR.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> Preview';
+    el.btnReplayR.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Hear Rhythm';
+  }
+  el.btnRestartR.style.display=(playing||paused)?'':'none';
 }
 
 /* ---- Metronome ---- */
@@ -365,11 +445,7 @@ function autoFill(){
   state.selTap=-1;renderNoteTimeline();
 }
 
-function replayRhythm(){
-  if(!state.taps.length)return;
-  ensureAudio();
-  state.taps.forEach(t=>setTimeout(()=>audio.playTapSound(),t.time*1000));
-}
+function replayRhythm(){toggleRhythmPreview()}
 
 function playMelody(){
   if(!state.noteAssigns.length)return;
@@ -648,10 +724,32 @@ function bind(){
   el.timeSig.addEventListener('change',()=>{state.timeSig=parseInt(el.timeSig.value);renderBeatLines()});
   el.btnMet.addEventListener('click',toggleMet);
   el.btnClear.addEventListener('click',clearRhythm);
-  el.btnPlayR.addEventListener('click',previewRhythm);
+  el.btnPlayR.addEventListener('click',toggleRhythmPreview);
+  el.btnRestartR.addEventListener('click',restartRhythm);
   el.btnConfirm.addEventListener('click',()=>{if(!state.taps.length){alert('Tap a rhythm first!');return}setMode('assign')});
 
-  el.piano.addEventListener('touchstart',e=>{e.preventDefault();const k=e.target.closest('.pkey');if(k)hitKey(+k.dataset.midi)},{passive:false});
+  // Piano: two-finger swipe to scroll octaves, single finger plays notes
+  let pianoSwipe=false,pianoSwipeX=0,pianoScrollX=0;
+  const pianoScroll=el.piano.parentElement;
+  el.piano.addEventListener('touchstart',e=>{
+    e.preventDefault();
+    if(e.touches.length>=2){
+      pianoSwipe=true;
+      pianoSwipeX=(e.touches[0].clientX+e.touches[1].clientX)/2;
+      pianoScrollX=pianoScroll.scrollLeft;
+    }else if(!pianoSwipe){
+      const k=e.target.closest('.pkey');if(k)hitKey(+k.dataset.midi);
+    }
+  },{passive:false});
+  el.piano.addEventListener('touchmove',e=>{
+    if(pianoSwipe&&e.touches.length>=2){
+      e.preventDefault();
+      const cx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+      pianoScroll.scrollLeft=pianoScrollX+(pianoSwipeX-cx);
+    }
+  },{passive:false});
+  el.piano.addEventListener('touchend',e=>{if(e.touches.length<2)pianoSwipe=false});
+  el.piano.addEventListener('touchcancel',()=>{pianoSwipe=false});
   el.piano.addEventListener('mousedown',e=>{const k=e.target.closest('.pkey');if(k)hitKey(+k.dataset.midi)});
 
   el.btnReplayR.addEventListener('click',replayRhythm);
