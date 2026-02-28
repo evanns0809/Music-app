@@ -64,6 +64,7 @@ const el={
   btnConfirm:$('#btn-confirm-rhythm'),
   noteTLInner:$('#note-tl-inner'),
   piano:$('#piano-keyboard'),
+  btnReplayR:$('#btn-replay-rhythm'),
   btnPlayM:$('#btn-play-melody'),
   btnAuto:$('#btn-auto-assign'),
   btnSave:$('#btn-save-theme'),
@@ -315,19 +316,16 @@ function renderNoteTimeline(){
     el.noteTLInner.innerHTML='<p class="empty-note-msg">No rhythm yet. Go to Tap first.</p>';
     return;
   }
-  const dur=getTimelineDuration();
   state.taps.forEach((tap,i)=>{
-    const pct=(tap.time/dur)*100;
     const a=state.noteAssigns.find(n=>n.tapIndex===i);
     const sel=state.selTap===i;
     const blk=document.createElement('div');
     blk.className='n-block'+(sel?' sel':'')+(a?' done':' empty');
-    blk.style.left=Math.max(2,Math.min(pct,96))+'%';
     if(a){
       const nm=noteDisplayName(a.midi);
-      blk.innerHTML=`<span class="nlbl">${nm.replace(/\d/,'')}</span><span class="noct">${nm.match(/\d/)?.[0]||''}</span>`;
+      blk.innerHTML=`<span class="nidx">${i+1}</span><span class="nlbl">${nm.replace(/\d/,'')}</span><span class="noct">${nm.match(/\d/)?.[0]||''}</span>`;
     }else{
-      blk.innerHTML=`<span class="nlbl">?</span><span class="noct">#${i+1}</span>`;
+      blk.innerHTML=`<span class="nidx">${i+1}</span><span class="nlbl">?</span><span class="noct">tap</span>`;
     }
     blk.addEventListener('click',()=>{
       state.selTap=i;renderNoteTimeline();
@@ -335,6 +333,11 @@ function renderNoteTimeline(){
     });
     el.noteTLInner.appendChild(blk);
   });
+  // Auto-scroll to selected tap
+  if(state.selTap>=0){
+    const selBlock=el.noteTLInner.children[state.selTap];
+    if(selBlock) selBlock.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  }
 }
 
 function assignNote(ti,midi){
@@ -360,6 +363,12 @@ function autoFill(){
     }
   });
   state.selTap=-1;renderNoteTimeline();
+}
+
+function replayRhythm(){
+  if(!state.taps.length)return;
+  ensureAudio();
+  state.taps.forEach(t=>setTimeout(()=>audio.playTapSound(),t.time*1000));
 }
 
 function playMelody(){
@@ -645,6 +654,7 @@ function bind(){
   el.piano.addEventListener('touchstart',e=>{e.preventDefault();const k=e.target.closest('.pkey');if(k)hitKey(+k.dataset.midi)},{passive:false});
   el.piano.addEventListener('mousedown',e=>{const k=e.target.closest('.pkey');if(k)hitKey(+k.dataset.midi)});
 
+  el.btnReplayR.addEventListener('click',replayRhythm);
   el.btnPlayM.addEventListener('click',playMelody);
   el.btnAuto.addEventListener('click',autoFill);
   el.btnSave.addEventListener('click',openThemeModal);
