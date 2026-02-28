@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Piano Composer</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div class="header-left">
+        <h1 class="logo">Piano Composer</h1>
+      </div>
+      <div class="header-center">
+        <div class="mode-tabs">
+          <button class="mode-tab active" data-mode="tap">Tap Rhythm</button>
+          <button class="mode-tab" data-mode="assign">Assign Notes</button>
+          <button class="mode-tab" data-mode="arrange">Arrange</button>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="btn-settings" class="icon-btn" title="Settings">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="main-content">
+
+      <!-- ========== TAP RHYTHM MODE ========== -->
+      <section id="mode-tap" class="mode-panel active">
+        <div class="tap-area-container">
+          <div class="tap-instructions">
+            <h2>Tap Your Rhythm</h2>
+            <p>Tap anywhere in the area below to record your rhythm pattern. Each tap becomes a note you'll assign a pitch to later.</p>
+          </div>
+
+          <div class="tap-controls">
+            <div class="tempo-control">
+              <label>BPM</label>
+              <button class="small-btn" id="tempo-down">-</button>
+              <span id="tempo-display">120</span>
+              <button class="small-btn" id="tempo-up">+</button>
+            </div>
+            <div class="time-sig-control">
+              <label>Time Sig</label>
+              <select id="time-signature">
+                <option value="4">4/4</option>
+                <option value="3">3/4</option>
+                <option value="6">6/8</option>
+              </select>
+            </div>
+            <button class="action-btn" id="btn-metronome">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L4 22h16L12 2z"/><line x1="12" y1="18" x2="12" y2="8"/></svg>
+              Metronome
+            </button>
+          </div>
+
+          <div id="tap-pad" class="tap-pad">
+            <div class="tap-pad-inner">
+              <div class="tap-ripple-container"></div>
+              <div class="tap-prompt">
+                <div class="tap-icon">
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M18 11V6a2 2 0 00-2-2 2 2 0 00-2 2v0M14 10V4a2 2 0 00-2-2 2 2 0 00-2 2v6M10 10.5V6a2 2 0 00-2-2 2 2 0 00-2 2v8"/><path d="M18 8a2 2 0 012 2v5a8 8 0 01-16 0v-1.5"/></svg>
+                </div>
+                <span class="tap-text">Tap here to create your rhythm</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="rhythm-display">
+            <div class="rhythm-timeline" id="rhythm-timeline">
+              <div class="timeline-beats" id="timeline-beats"></div>
+              <div class="timeline-taps" id="timeline-taps"></div>
+            </div>
+          </div>
+
+          <div class="tap-actions">
+            <button class="secondary-btn" id="btn-clear-rhythm">Clear</button>
+            <button class="secondary-btn" id="btn-play-rhythm">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+              Preview
+            </button>
+            <button class="primary-btn" id="btn-confirm-rhythm">Assign Notes →</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== ASSIGN NOTES MODE ========== -->
+      <section id="mode-assign" class="mode-panel">
+        <div class="assign-container">
+          <div class="assign-top">
+            <div class="assign-instructions">
+              <h2>Assign Notes</h2>
+              <p>Select a tap on the timeline, then press a key on the piano to assign that note.</p>
+            </div>
+
+            <div class="note-timeline-container">
+              <div class="note-timeline" id="note-timeline">
+                <div class="note-timeline-inner" id="note-timeline-inner"></div>
+              </div>
+            </div>
+
+            <div class="assign-actions">
+              <button class="secondary-btn" id="btn-play-melody">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                Play Melody
+              </button>
+              <button class="secondary-btn" id="btn-auto-assign">Auto-Fill</button>
+              <button class="primary-btn" id="btn-save-theme">Save as Theme →</button>
+            </div>
+          </div>
+
+          <div class="piano-container">
+            <div class="piano-scroll">
+              <div class="piano" id="piano-keyboard"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== ARRANGE MODE ========== -->
+      <section id="mode-arrange" class="mode-panel">
+        <div class="arrange-container">
+          <div class="arrange-header">
+            <h2>Arrange Themes</h2>
+            <p>Drag themes onto the timeline to build your composition. Add multiple themes and arrange them in any order.</p>
+          </div>
+
+          <!-- Theme Library -->
+          <div class="theme-library">
+            <div class="theme-library-header">
+              <h3>Your Themes</h3>
+              <button class="small-action-btn" id="btn-new-theme">+ New Theme</button>
+            </div>
+            <div class="theme-list" id="theme-list">
+              <div class="empty-themes">
+                <p>No themes yet. Go to "Tap Rhythm" to create your first theme!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Arrangement Timeline -->
+          <div class="arrangement-section">
+            <div class="arrangement-header">
+              <h3>Arrangement</h3>
+              <div class="arrangement-controls">
+                <button class="action-btn" id="btn-play-arrangement">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                  Play All
+                </button>
+                <button class="action-btn" id="btn-stop-arrangement">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16"/></svg>
+                  Stop
+                </button>
+                <button class="action-btn" id="btn-loop-arrangement">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+                  Loop
+                </button>
+              </div>
+            </div>
+            <div class="arrangement-timeline" id="arrangement-timeline">
+              <div class="arrangement-drop-zone" id="arrangement-drop-zone">
+                <p class="drop-hint">Tap a theme above, then tap here to add it</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Export -->
+          <div class="export-section">
+            <button class="primary-btn" id="btn-export-midi">Export MIDI</button>
+            <button class="secondary-btn" id="btn-export-wav">Export WAV</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>Settings</h2>
+          <button class="modal-close" id="close-settings">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="setting-group">
+            <label>Master Volume</label>
+            <input type="range" id="master-volume" min="0" max="100" value="80">
+          </div>
+          <div class="setting-group">
+            <label>Piano Sound</label>
+            <select id="piano-sound-type">
+              <option value="grand">Grand Piano</option>
+              <option value="bright">Bright Piano</option>
+              <option value="warm">Warm Piano</option>
+              <option value="electric">Electric Piano</option>
+            </select>
+          </div>
+          <div class="setting-group">
+            <label>Reverb Amount</label>
+            <input type="range" id="reverb-amount" min="0" max="100" value="40">
+          </div>
+          <div class="setting-group">
+            <label>Quantize Taps</label>
+            <select id="quantize-value">
+              <option value="0">Off</option>
+              <option value="16" selected>1/16 note</option>
+              <option value="8">1/8 note</option>
+              <option value="4">1/4 note</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Theme Naming Modal -->
+    <div class="modal-overlay" id="theme-name-modal">
+      <div class="modal modal-small">
+        <div class="modal-header">
+          <h2>Name Your Theme</h2>
+          <button class="modal-close" id="close-theme-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input type="text" id="theme-name-input" placeholder="e.g. Main Melody, Chorus, Bridge..." class="text-input">
+          <div class="theme-color-picker">
+            <label>Color:</label>
+            <div class="color-options" id="color-options">
+              <button class="color-opt selected" data-color="#6C5CE7" style="background:#6C5CE7"></button>
+              <button class="color-opt" data-color="#00B894" style="background:#00B894"></button>
+              <button class="color-opt" data-color="#E17055" style="background:#E17055"></button>
+              <button class="color-opt" data-color="#FDCB6E" style="background:#FDCB6E"></button>
+              <button class="color-opt" data-color="#E84393" style="background:#E84393"></button>
+              <button class="color-opt" data-color="#0984E3" style="background:#0984E3"></button>
+            </div>
+          </div>
+          <button class="primary-btn full-width" id="btn-confirm-theme-name">Save Theme</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="audio-engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
